@@ -7,8 +7,9 @@
 ## 使用要求
 
 - **OMP 18.1.17 是目前验证过的版本**。建议使用 18.1.17+，但不保证未来版本兼容。
-- Git、拥有目标文件访问权限的 Figma 账号，以及与 OMP 运行在同一台机器上的浏览器，用于接收本地 OAuth 回调。无需 Figma 桌面客户端。
+- 拥有目标文件访问权限的 Figma 账号，以及与 OMP 运行在同一台机器上的浏览器，用于接收本地 OAuth 回调。无需 Figma 桌面客户端。仅源码安装需要 Git。
 - 零运行时包依赖，无需 `pi-mcp-adapter`、`npm install` 或构建。开发测试需要 Node.js 22.6.0+ 和 npm。
+- OMP 的 npm 安装功能要求 `PATH` 中有独立的 `bun` 命令。打包好的 OMP 可执行文件不一定附带它，请参阅 [Bun 安装说明](https://bun.com/docs/installation)。这是安装器的要求，不是插件的包依赖。
 
 ## 安装与连接
 
@@ -19,6 +20,12 @@ omp install omp-figma-remote-auth
 ```
 
 重启 OMP，或在已有 OMP 会话中输入 `/reload-plugins`。无需克隆源码，也无需额外执行 `npm install -g`。
+
+如果 OMP 提示 `Executable not found in $PATH: "bun"`，请先安装 Bun。已有 Node.js/npm 时，也可临时提供 Bun 来执行安装：
+
+```sh
+npm exec --yes --package=bun -- omp install omp-figma-remote-auth
+```
 
 如需开发插件或从源码安装：
 

@@ -7,8 +7,9 @@ An unofficial [Oh My Pi (OMP)](https://github.com/can1357/oh-my-pi) plugin for a
 ## Requirements
 
 - OMP **18.1.17 is the currently verified version**. Use 18.1.17+; compatibility with future releases is not guaranteed.
-- Git, a Figma account with access to the intended files, and a browser on the same machine as OMP for the local OAuth callback. Figma Desktop is not required.
+- A Figma account with access to the intended files, and a browser on the same machine as OMP for the local OAuth callback. Figma Desktop is not required. Git is only needed for source installation.
 - Zero runtime package dependencies. No `pi-mcp-adapter`, `npm install`, or build step is needed. Development tests require Node.js 22.6.0+ and npm.
+- OMP's npm installer requires the standalone `bun` command on `PATH`. A packaged OMP binary may not include it; see the [Bun installation guide](https://bun.com/docs/installation). This is an installer requirement, not a package dependency.
 
 ## Install and connect
 
@@ -19,6 +20,12 @@ omp install omp-figma-remote-auth
 ```
 
 Restart OMP, or enter `/reload-plugins` in an existing OMP session. No source checkout or separate `npm install -g` is required.
+
+If OMP reports `Executable not found in $PATH: "bun"`, install Bun first. With Node.js/npm available, you can also supply Bun temporarily for this command:
+
+```sh
+npm exec --yes --package=bun -- omp install omp-figma-remote-auth
+```
 
 To develop the plugin or install from source instead:
 
