@@ -12,14 +12,22 @@ An unofficial [Oh My Pi (OMP)](https://github.com/can1357/oh-my-pi) plugin for a
 
 ## Install and connect
 
-Run these commands in your **terminal (CLI)**, from the directory where you want to keep the clone:
+Run this command in your **terminal (CLI)** to install from npm:
+
+```sh
+omp install omp-figma-remote-auth
+```
+
+Restart OMP, or enter `/reload-plugins` in an existing OMP session. No source checkout or separate `npm install -g` is required.
+
+To develop the plugin or install from source instead:
 
 ```sh
 git clone https://github.com/picasuo/omp-figma-remote-auth.git
 omp plugin link ./omp-figma-remote-auth
 ```
 
-Keep the cloned directory in place: OMP links to it. Restart OMP, or enter `/reload-plugins` in an existing OMP session.
+For a source installation, keep the cloned directory in place: OMP links to it. Restart OMP or run `/reload-plugins` after linking.
 
 The following are **slash commands inside OMP's interactive interface (TUI)**, not shell commands. Start OMP with `omp` if needed, then run:
 
@@ -96,6 +104,6 @@ Restart OMP or run `/reload-plugins`. If you also want to remove the server, del
 
 ## Development and credits
 
-From the repository directory, run `npm test`. Tests use Node's built-in test runner and need no `npm install`. Package metadata and `prepublishOnly` are prepared for a future npm release; use the Git clone/link installation above until a release is published.
+From the repository directory, run `npm test`. Tests use Node's built-in test runner and need no `npm install`. `npm publish` runs the tests through `prepublishOnly` and publishes to the official npm registry. The package's `files` allowlist includes only the runtime source, documentation, and license.
 
 [MIT licensed](LICENSE), with copyright notices for DianP and the omp-figma-remote-auth contributors. Adapted for OMP from [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth). Thanks also to [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper), which the original project referenced for the authentication approach.

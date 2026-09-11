@@ -12,14 +12,22 @@
 
 ## 安装与连接
 
-在**终端（CLI）**中，进入希望保留仓库副本的目录后执行：
+在**终端（CLI）**中执行以下命令，从 npm 安装：
+
+```sh
+omp install omp-figma-remote-auth
+```
+
+重启 OMP，或在已有 OMP 会话中输入 `/reload-plugins`。无需克隆源码，也无需额外执行 `npm install -g`。
+
+如需开发插件或从源码安装：
 
 ```sh
 git clone https://github.com/picasuo/omp-figma-remote-auth.git
 omp plugin link ./omp-figma-remote-auth
 ```
 
-保留克隆目录的位置，OMP 会链接到该目录。重启 OMP，或在已有 OMP 会话中输入 `/reload-plugins`。
+源码安装需要保留克隆目录的位置，OMP 会链接到该目录。链接后重启 OMP 或运行 `/reload-plugins`。
 
 以下是 **OMP 交互界面（TUI）中的斜杠命令**，不能直接在 shell 中运行。需要时先用 `omp` 启动 OMP，然后执行：
 
@@ -96,6 +104,6 @@ omp plugin uninstall omp-figma-remote-auth
 
 ## 开发与致谢
 
-在仓库目录执行 `npm test`。测试使用 Node 内置测试运行器，无需 `npm install`。包元数据和 `prepublishOnly` 已为后续 npm 发布做准备；正式发布前请使用上方 Git clone/link 安装方式。
+在仓库目录执行 `npm test`。测试使用 Node 内置测试运行器，无需 `npm install`。`npm publish` 会通过 `prepublishOnly` 运行测试，并发布到 npm 官方仓库。包的 `files` 白名单仅包含运行源码、文档和许可证。
 
 本项目采用 [MIT 许可证](LICENSE)，保留 DianP 与 omp-figma-remote-auth contributors 的版权声明。由 [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth) 适配到 OMP。同时感谢 [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper)，原项目曾参考其认证思路。

@@ -1,11 +1,13 @@
 {
   "name": "omp-figma-remote-auth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OAuth helper for Figma remote MCP using OMP native transport",
   "type": "module",
   "license": "MIT",
   "author": "picasuo",
-  "contributors": ["DianP (original Pi extension)"],
+  "contributors": [
+    "DianP (original Pi extension)"
+  ],
   "homepage": "https://github.com/picasuo/omp-figma-remote-auth#readme",
   "repository": {
     "type": "git",
@@ -14,9 +16,18 @@
   "bugs": {
     "url": "https://github.com/picasuo/omp-figma-remote-auth/issues"
   },
-  "keywords": ["omp", "omp-package", "oh-my-pi", "figma", "mcp", "oauth", "remote-mcp"],
+  "keywords": [
+    "omp",
+    "omp-package",
+    "oh-my-pi",
+    "figma",
+    "mcp",
+    "oauth",
+    "remote-mcp"
+  ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "main": "./index.ts",
   "exports": "./index.ts",
