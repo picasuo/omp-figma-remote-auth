@@ -1,0 +1,15 @@
+node_modules/
+coverage/
+*.tgz
+.DS_Store
+.env
+.env.*
+!.env.example
+.omp/
+.pi/
+mcp.json
+.mcp.json
+*.db
+*.db-shm
+*.db-wal
+*.log
