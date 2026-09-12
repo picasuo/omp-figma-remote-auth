@@ -28,4 +28,6 @@ test("the package includes the discoverable figma-mcp skill", () => {
   assert.match(skill, /read xd:\/\//u);
   assert.match(skill, /write xd:\/\/mcp__figma_get_design_context/u);
   assert.match(skill, /mcp:\/\/skill:\/\/figma\/figma-design-to-code\/SKILL\.md/u);
+  assert.match(skill, /lookup is optional/u);
+  assert.match(skill, /do not report that Figma MCP is unavailable/u);
 });

@@ -40,15 +40,17 @@ Read `xd://` to find the exact mounted tool name. Read the selected tool path to
 
 Do not try `xd://https://www.figma.com/...`. Do not stop after checking only top-level tools.
 
-## 3. Use the Figma workflow guidance
+## 3. Use the Figma workflow guidance when available
 
-Before calling `get_design_context`, read the Figma-provided design-to-code guidance when available:
+For design-to-code requests, the Figma-provided workflow guidance can add implementation details. If the host exposes MCP resources, try the explicit MCP resource route:
 
 ```text
 read mcp://skill://figma/figma-design-to-code/SKILL.md
 ```
 
-The `mcp://` prefix matters when plain `skill://figma/...` resolves through OMP's local skill namespace and reports `Unknown skill`. Follow the retrieved guidance, adapting its reference code to the target project's actual stack and existing components.
+Never use plain `skill://figma/...` for this resource: OMP may resolve that path through its local skill namespace and return `Unknown skill: figma`. This resource lookup is optional. If either route fails, continue with this skill's instructions and the successful Figma MCP call; do not report that Figma MCP is unavailable merely because a workflow document could not be read.
+
+Adapt any retrieved reference code to the target project's actual stack and existing components. Do not let an auxiliary skill-resource error prevent metadata, screenshot, or design-context retrieval.
 
 ## 4. Report only observed results
 
