@@ -45,6 +45,8 @@ Approve access and wait for OMP to confirm that credentials were saved.
 
 The server name is `figma`. Once connected, give OMP a Figma file or node URL you can access.
 
+The package also includes the on-demand `figma-mcp` skill. When you provide a Figma file or node link, it guides OMP through parsing the node reference and discovering the Figma MCP tools, including tools mounted under `xd://`.
+
 ## Commands
 
 These commands run **inside OMP's TUI**, not in your terminal.

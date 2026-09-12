@@ -18,7 +18,11 @@ Keep the checkout in place: OMP links to it. Follow the login and connection ste
 
 Use a package link to test the full plugin. `omp -e /path/to/index.ts` can test authentication commands, but command availability alone does not prove discovery of the package's MCP definition.
 
+Run install/uninstall checks from an empty directory outside this checkout, using the same OMP profile and no `-e` option. Inside the checkout, OMP also discovers the root `.mcp.json` as project configuration, so Figma remains available even after the npm plugin is uninstalled. Retained credentials alone do not register a server.
+
 The plugin commands are `login`, `status`, `logout`, `cancel`, and `help`. Login runs `migrateLegacyData` before authorization; keep migration and credential ownership checks in that flow. MCP registration comes from the package's `.mcp.json`.
+
+The package also ships `skills/figma-mcp/SKILL.md`. OMP discovers it as an installed-plugin skill; the skill is loaded on demand when a prompt contains a Figma design or node task. Keep its frontmatter description specific enough to trigger on Figma URLs, inspection, screenshots, and implementation requests. The skill explains `xd://` discovery and the `mcp://skill://figma/...` route needed for Figma-provided workflow resources.
 
 Run tests from the repository directory. No dependency installation or build is needed:
 
@@ -52,6 +56,10 @@ omp
 OMP 链接到源码目录，请保留其位置。之后按[安装和授权](README.zh-CN.md#安装和授权)中的登录和连接步骤操作。修改源码后重启 OMP，或运行 `/reload-plugins`；MCP 变更后再运行 `/mcp reload`。
 
 验证完整插件行为请使用包级 link。`omp -e /path/to/index.ts` 可用于测试认证命令，但不能仅凭命令可用就判定包内 MCP 已被发现。
+
+安装/卸载回归请在源码仓库外的空目录中进行，使用同一 OMP profile，不带 `-e`。在源码目录内启动时，OMP 还会将根 `.mcp.json` 识别为项目配置，因此卸载 npm 插件后 Figma 仍可用。仅保留凭据不会注册 MCP 服务。
+
+插件还提供 `skills/figma-mcp/SKILL.md`。OMP 会将它作为已安装插件的 skill 发现，并在提示涉及 Figma 设计或节点任务时按需加载。frontmatter 描述必须覆盖 Figma 链接、结构检查、截图和设计实现请求。正文负责说明 `xd://` 工具发现，以及读取 Figma 官方工作流资源时所需的 `mcp://skill://figma/...` 路径。
 
 插件命令为 `login`、`status`、`logout`、`cancel` 和 `help`。Login 在授权前调用 `migrateLegacyData`，迁移和凭据归属检查应保留在该流程中。MCP 注册由包内 `.mcp.json` 提供。
 
