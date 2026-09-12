@@ -9,6 +9,7 @@ coverage/
 .pi/
 mcp.json
 .mcp.json
+!/.mcp.json
 *.db
 *.db-shm
 *.db-wal

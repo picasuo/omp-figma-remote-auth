@@ -2,115 +2,97 @@
 
 [简体中文](README.zh-CN.md)
 
-An unofficial [Oh My Pi (OMP)](https://github.com/can1357/oh-my-pi) plugin for authenticating with the official Figma Remote MCP server at `https://mcp.figma.com/mcp`. It configures the `figma` server and performs browser OAuth login; OMP provides native MCP transport, tool discovery, and token refresh. This project is not affiliated with or endorsed by Figma or OpenAI.
+Connect [Oh My Pi (OMP)](https://github.com/can1357/oh-my-pi) to the official Figma Remote MCP server with browser login. OMP handles connections and token refresh. This unofficial plugin is not affiliated with Figma or OpenAI.
 
-## Requirements
+## Installation and authorization
 
-- OMP **18.1.17 is the currently verified version**. Use 18.1.17+; compatibility with future releases is not guaranteed.
-- A Figma account with access to the intended files, and a browser on the same machine as OMP for the local OAuth callback. Figma Desktop is not required. Git is only needed for source installation.
-- Zero runtime package dependencies. No `pi-mcp-adapter`, `npm install`, or build step is needed. Development tests require Node.js 22.6.0+ and npm.
-- OMP's npm installer requires the standalone `bun` command on `PATH`. A packaged OMP binary may not include it; see the [Bun installation guide](https://bun.com/docs/installation). This is an installer requirement, not a package dependency.
+Requires OMP 18.1.17+ (verified on 18.1.17), a Figma account with file access, and a browser on the same machine as OMP. No Figma Desktop or manual MCP configuration is needed.
 
-## Install and connect
-
-Run this command in your **terminal (CLI)** to install from npm:
+### 1. Install in your terminal
 
 ```sh
-omp install omp-figma-remote-auth
+omp plugin install omp-figma-remote-auth@latest
 ```
 
-Restart OMP, or enter `/reload-plugins` in an existing OMP session. No source checkout or separate `npm install -g` is required.
-
-If OMP reports `Executable not found in $PATH: "bun"`, install Bun first. With Node.js/npm available, you can also supply Bun temporarily for this command:
+If `bun` is missing, use Node.js/npm to supply it temporarily:
 
 ```sh
-npm exec --yes --package=bun -- omp install omp-figma-remote-auth
+npm exec --yes --package=bun -- omp plugin install omp-figma-remote-auth@latest
 ```
 
-To develop the plugin or install from source instead:
+Start or restart OMP after installation:
 
 ```sh
-git clone https://github.com/picasuo/omp-figma-remote-auth.git
-omp plugin link ./omp-figma-remote-auth
+omp
 ```
 
-For a source installation, keep the cloned directory in place: OMP links to it. Restart OMP or run `/reload-plugins` after linking.
-
-The following are **slash commands inside OMP's interactive interface (TUI)**, not shell commands. Start OMP with `omp` if needed, then run:
+### 2. Log in from the OMP input box
 
 ```text
-/figma-remote-auth setup
 /figma-remote-auth login
 ```
 
-`setup` configures the server without logging in. It is optional here because `login` runs setup automatically.
+Your browser opens automatically. If it does not, click **点击这里授权 Figma** (“Click here to authorize Figma”) above the editor, or copy the complete short URL into your browser. The default app name on the consent page is **Codex**; see [authentication details](#configuration-and-authentication).
 
-Open the displayed authorization URL manually in a browser on the same machine. With the default settings, Figma's consent page shows **Codex** as the application name; see the authentication explanation below. Approve access, keep OMP running for the callback to `http://127.0.0.1:<port>/callback`, and return to OMP to confirm that authorization was saved. The browser receiving the code alone does not confirm that token exchange succeeded.
+Approve access and wait for OMP to confirm that credentials were saved.
 
-After OMP confirms success, run these TUI commands:
+### 3. Check the connection in OMP
 
 ```text
 /mcp reload
 /mcp test figma
 ```
 
-You can then ask OMP to use Figma tools with a Figma file or node URL you can access.
+The server name is `figma`. Once connected, give OMP a Figma file or node URL you can access.
 
 ## Commands
 
-All commands in this table run in the OMP TUI.
+These commands run **inside OMP's TUI**, not in your terminal.
 
 | Command | Purpose |
 | --- | --- |
-| `/figma-remote-auth help` | Show usage; also the default with no subcommand. |
-| `/figma-remote-auth setup` | Add or merge the native `figma` HTTP MCP configuration. |
-| `/figma-remote-auth login` | Run setup, dynamically register a client, and display the browser authorization link. |
-| `/figma-remote-auth status` | Check local configuration, credential presence/expiry, and any active operation; this is not a live connection test. |
-| `/figma-remote-auth logout` | Delete only this plugin's credential for the active profile; keep the MCP configuration. |
-| `/figma-remote-auth cancel` | Cancel the pending authorization and close its callback listener. |
+| `/figma-remote-auth login` | Log in or reauthorize, handling necessary migration automatically. |
+| `/figma-remote-auth status` | Show local credentials; does not test the connection. |
+| `/figma-remote-auth cancel` | Cancel authorization and close the local entry and listener. |
+| `/figma-remote-auth logout` | Clear this plugin's local credentials without revoking Figma authorization. |
+| `/figma-remote-auth help` | Show full usage. |
+| `/mcp list` | List MCP servers. |
 
-`login` accepts `--client-name` (default `Codex`, 1–128 printable characters, not blank) and `--port` (default `0`, which lets the OS choose an available port; valid range 0–65535). For example:
+Add `--no-browser` to open the short entry manually, `--port` to choose a port (random by default), or `--client-name` to change the app name (default `Codex`). See `help` for full usage.
 
-```text
-/figma-remote-auth login --client-name Codex --port 19876
-```
+Authorization waits up to **10 minutes**. Completion, cancellation, or exiting OMP releases the listener; closing the browser does not cancel the wait.
 
-Quote names containing spaces. A different client name may be rejected by Figma. Login times out after 10 minutes; `cancel` or exiting OMP also stops the wait. Run `/mcp reload` after setup, login, or logout so OMP picks up the change.
+## Uninstall
 
-## Authentication, profiles, and limits
-
-Each login sends `client_name: Codex` by default to Figma's dynamic client registration endpoint and receives a **new `client_id`**. It then uses the OAuth authorization code flow with PKCE S256 and state validation. It does not reuse or steal an existing Codex client ID, secret, or account token. The display name does not make this an official Codex integration. This is a compatibility workaround for Figma's client acceptance policy; Figma may change registration rules or endpoints and stop accepting it. See Figma's [client access policy](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/#which-mcp-clients-are-supported).
-
-Setup writes to the **active OMP agent directory's `mcp.json`** (normally `~/.omp/agent/mcp.json`). With `omp --profile <name>`, perform setup, login, status, and logout in that same profile. Credential IDs are derived from the active agent directory and Figma endpoint, so authentication is not automatically shared between profiles. The plugin does not write project-local MCP configuration.
-
-Access/refresh tokens and client registration data are saved through **OMP's native AuthStorage**. The `mcp.json` entry contains the server URL, transport type, and an OAuth `credentialId` reference, not the tokens. OMP handles subsequent token refresh.
-
-Figma's [official rate limits and access documentation](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/) currently gives Starter users **up to 20 calls per month for tools that read data from Figma**, with some tools exempt. Limits depend on plan and seat, can change, and do not replace file permissions. This plugin does not increase or bypass quotas.
-
-## Troubleshooting
-
-- **Unknown slash command:** check `omp plugin list` in the terminal, then restart OMP or run `/reload-plugins`. Use `/figma-remote-auth ...` in the TUI; there is no `omp figma-remote-auth` CLI command. `/mcp ...` commands also belong in the TUI.
-- **Existing configuration conflict:** setup refuses to overwrite a conflicting `mcpServers.figma` entry. Back up the active agent directory's `mcp.json`, then inspect that entry for a different URL/type, an `Authorization` header, another `auth` source, or old transport/token options such as `command`, `args`, `env`, or `oauth`. If migrating, remove or rename the obsolete entry after reviewing it, then rerun setup/login. Preserve unrelated servers. Also check project MCP configurations if OMP still resolves a different `figma` server. A credential ownership conflict requires resolving the other authentication source; the plugin will not overwrite it.
-- **Browser callback fails or login stalls:** keep the browser and OMP on the same machine; a browser on your laptop cannot directly reach a remote SSH/container loopback listener. Check local port access, cancel the attempt, and retry with `--port 0` or an available fixed port. A failed login may leave setup in place without a saved credential.
-- **Authentication still fails:** run `/figma-remote-auth status`, log in again with `/figma-remote-auth login`, then `/mcp reload` and `/mcp test figma`. OMP's `/mcp reauth figma` is its own generic OAuth flow; it does **not** invoke this plugin's login or its client-name registration behavior.
-- **Permission or quota errors:** check the authorized Figma account, file access, plan, and seat against the official limits above; logging in again does not add quota.
-
-## Logout and uninstall
-
-Installing or linking the plugin does not log you in. Uninstalling it does not automatically clear credentials or remove the `figma` MCP configuration.
-
-For credential cleanup, run `/figma-remote-auth logout` and `/mcp reload` in each profile you authorized **before uninstalling**. Logout deletes the local credential only; it does **not revoke the server-side authorization at Figma**. To revoke that authorization, remove the corresponding app authorization in your Figma account settings.
-
-Uninstall from the terminal:
+Run this in your terminal, then restart OMP:
 
 ```sh
 omp plugin uninstall omp-figma-remote-auth
 ```
 
-Restart OMP or run `/reload-plugins`. If you also want to remove the server, delete only its `mcpServers.figma` entry from the relevant `mcp.json` and run `/mcp reload`. You can delete the clone after unlinking/uninstalling it. If already uninstalled, link it again to use logout in the original profile.
+Uninstalling removes the package's Figma registration and retains credentials for reinstalling. Independent user/project configuration is unaffected.
 
-## Development and credits
+To clear credentials too, run `/figma-remote-auth logout` and `/mcp reload` in OMP before uninstalling. Revoke server-side authorization separately in your Figma account settings.
 
-From the repository directory, run `npm test`. Tests use Node's built-in test runner and need no `npm install`. `npm publish` runs the tests through `prepublishOnly` and publishes to the official npm registry. The package's `files` allowlist includes only the runtime source, documentation, and license.
+## Troubleshooting
 
-[MIT licensed](LICENSE), with copyright notices for DianP and the omp-figma-remote-auth contributors. Adapted for OMP from [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth). Thanks also to [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper), which the original project referenced for the authentication approach.
+| Problem | What to do |
+| --- | --- |
+| Plugin command not found | Check `omp plugin list` in your terminal, then restart OMP. |
+| MCP not connected | Confirm the full package is installed, then run `/mcp reload` and `/mcp test figma`. |
+| Callback fails or login keeps waiting | Cancel and retry with `/figma-remote-auth login --port 0`. The browser must reach `127.0.0.1` on the OMP machine; SSH/container forwarding is not configured automatically. |
+| Config or credential conflict | Inspect the reported path and back up before editing. Custom config and credentials from other sources are not overwritten. |
+| Authentication fails | Run `/figma-remote-auth login` again, then reload/test. `/mcp reauth figma` does not invoke this plugin. |
+| Permission or quota error | Check the account, file access, and plan; see [Figma's limits](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/). |
+
+## Configuration and authentication
+
+- **Config and credentials:** the package's `.mcp.json` provides Figma MCP; new installs do not write user MCP config. OMP stores and refreshes credentials. When using profiles, log in within the same profile.
+- **App name:** `Codex` accommodates [Figma's client policy](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/#which-mcp-clients-are-supported). Each login registers an independent client without using Codex accounts or credentials.
+- **Authorization entry:** a local short URL forwards the complete OAuth request. Long authorization URLs and tokens are never printed in the terminal.
+
+## License and credits
+
+[MIT](LICENSE). Adapted from [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth), whose authentication approach references [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper).
+
+For source installation and testing, see the [development guide](https://github.com/picasuo/omp-figma-remote-auth/blob/main/DEVELOPMENT.md#english).

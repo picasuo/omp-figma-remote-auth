@@ -2,115 +2,97 @@
 
 [English](README.md)
 
-用于登录 Figma 官方远程 MCP 服务 `https://mcp.figma.com/mcp` 的非官方 [Oh My Pi（OMP）](https://github.com/can1357/oh-my-pi) 插件。它配置 `figma` 服务并完成浏览器 OAuth 登录，由 OMP 原生负责 MCP 传输、工具发现和令牌刷新。本项目与 Figma、OpenAI 无隶属关系，也未获其官方背书。
+为 [Oh My Pi（OMP）](https://github.com/can1357/oh-my-pi) 接入 Figma 官方远程 MCP，提供浏览器登录，连接和令牌刷新由 OMP 负责。非官方插件，与 Figma、OpenAI 无隶属关系。
 
-## 使用要求
+## 安装和授权
 
-- **OMP 18.1.17 是目前验证过的版本**。建议使用 18.1.17+，但不保证未来版本兼容。
-- 拥有目标文件访问权限的 Figma 账号，以及与 OMP 运行在同一台机器上的浏览器，用于接收本地 OAuth 回调。无需 Figma 桌面客户端。仅源码安装需要 Git。
-- 零运行时包依赖，无需 `pi-mcp-adapter`、`npm install` 或构建。开发测试需要 Node.js 22.6.0+ 和 npm。
-- OMP 的 npm 安装功能要求 `PATH` 中有独立的 `bun` 命令。打包好的 OMP 可执行文件不一定附带它，请参阅 [Bun 安装说明](https://bun.com/docs/installation)。这是安装器的要求，不是插件的包依赖。
+需要 OMP 18.1.17+（已验证 18.1.17）、有文件访问权限的 Figma 账号，以及与 OMP 在同一台机器上的浏览器。无需 Figma Desktop 或手动编辑 MCP 配置。
 
-## 安装与连接
-
-在**终端（CLI）**中执行以下命令，从 npm 安装：
+### 1. 安装：在终端执行
 
 ```sh
-omp install omp-figma-remote-auth
+omp plugin install omp-figma-remote-auth@latest
 ```
 
-重启 OMP，或在已有 OMP 会话中输入 `/reload-plugins`。无需克隆源码，也无需额外执行 `npm install -g`。
-
-如果 OMP 提示 `Executable not found in $PATH: "bun"`，请先安装 Bun。已有 Node.js/npm 时，也可临时提供 Bun 来执行安装：
+如果提示找不到 `bun`，可用 Node.js/npm 临时提供：
 
 ```sh
-npm exec --yes --package=bun -- omp install omp-figma-remote-auth
+npm exec --yes --package=bun -- omp plugin install omp-figma-remote-auth@latest
 ```
 
-如需开发插件或从源码安装：
+安装后启动或重启 OMP：
 
 ```sh
-git clone https://github.com/picasuo/omp-figma-remote-auth.git
-omp plugin link ./omp-figma-remote-auth
+omp
 ```
 
-源码安装需要保留克隆目录的位置，OMP 会链接到该目录。链接后重启 OMP 或运行 `/reload-plugins`。
-
-以下是 **OMP 交互界面（TUI）中的斜杠命令**，不能直接在 shell 中运行。需要时先用 `omp` 启动 OMP，然后执行：
+### 2. 登录：在 OMP 输入框执行
 
 ```text
-/figma-remote-auth setup
 /figma-remote-auth login
 ```
 
-`setup` 只配置服务，不登录。此处可以省略，因为 `login` 会自动执行 setup。
+浏览器会自动打开。未打开时，点击编辑器上方的 **点击这里授权 Figma**，或复制完整短地址到浏览器。默认授权应用名称为 **Codex**，原因见[认证说明](#配置与认证说明)。
 
-在同一台机器的浏览器中手动打开输出的授权链接。默认设置下，Figma 授权页显示的应用名称是 **Codex**，原因见下方认证机制说明。确认授权并保持 OMP 运行，浏览器会回调 `http://127.0.0.1:<port>/callback`。返回 OMP 确认凭据已保存；浏览器收到授权码并不代表令牌交换已经成功。
+确认授权，等待 OMP 提示凭据已保存。
 
-OMP 提示成功后，在 TUI 中执行：
+### 3. 验证连接：在 OMP 输入框执行
 
 ```text
 /mcp reload
 /mcp test figma
 ```
 
-随后可向 OMP 提供自己有权限访问的 Figma 文件或节点链接，让它使用 Figma 工具。
+服务名为 `figma`。连接成功后，即可向 OMP 提供你有权限访问的 Figma 文件或节点链接。
 
-## 命令
+## 常用命令
 
-下表所有命令均在 OMP TUI 中执行。
+以下均在 **OMP TUI** 中执行，不是终端命令。
 
 | 命令 | 用途 |
 | --- | --- |
-| `/figma-remote-auth help` | 查看帮助；不带子命令时也会显示帮助。 |
-| `/figma-remote-auth setup` | 添加或合并原生 `figma` HTTP MCP 配置。 |
-| `/figma-remote-auth login` | 自动 setup、动态注册客户端，并显示浏览器授权链接。 |
-| `/figma-remote-auth status` | 检查本地配置、凭据是否存在及到期时间、当前操作状态；不进行实际连接测试。 |
-| `/figma-remote-auth logout` | 仅删除当前 profile 中属于本插件的凭据，保留 MCP 配置。 |
-| `/figma-remote-auth cancel` | 取消正在等待的授权，关闭回调监听。 |
+| `/figma-remote-auth login` | 登录或重新授权，自动处理必要迁移。 |
+| `/figma-remote-auth status` | 查看本地凭据，不测试连接。 |
+| `/figma-remote-auth cancel` | 取消授权，关闭短入口和监听端口。 |
+| `/figma-remote-auth logout` | 清除本插件的本地凭据，不撤销 Figma 端授权。 |
+| `/figma-remote-auth help` | 查看完整用法。 |
+| `/mcp list` | 查看 MCP 服务。 |
 
-`login` 支持 `--client-name`（默认 `Codex`，1–128 个可打印字符，不能全为空白）与 `--port`（默认 `0`，由操作系统选择可用端口；有效范围为 0–65535）。例如：
+登录加 `--no-browser` 可手动打开短入口；`--port` 指定端口（默认随机），`--client-name` 修改应用名称（默认 `Codex`）。完整用法见 `help`。
 
-```text
-/figma-remote-auth login --client-name Codex --port 19876
-```
+授权最多等待 **10 分钟**。流程结束、取消或退出 OMP 后释放监听端口；关闭浏览器不会取消等待。
 
-含空格的名称需加引号。Figma 可能拒绝其他客户端名称。登录会在 10 分钟后超时；执行 `cancel` 或退出 OMP 也会结束等待。setup、login 或 logout 后均应运行 `/mcp reload`，使 OMP 加载变更。
+## 卸载
 
-## 认证机制、profile 与限额
-
-每次登录默认向 Figma 动态客户端注册端点发送 `client_name: Codex`，获取一个**新的 `client_id`**，再通过带 PKCE S256 和 state 校验的 OAuth 授权码流程登录。插件不会复用或偷用已有 Codex 的客户端 ID、密钥或账号令牌。显示名称也不代表这是官方 Codex 集成。这是针对 Figma 客户端准入策略的兼容方案；Figma 可能修改注册规则或端点，使其失效。参见 Figma 的[客户端访问策略](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/#which-mcp-clients-are-supported)。
-
-Setup 写入**当前 OMP agent 目录下的 `mcp.json`**（通常为 `~/.omp/agent/mcp.json`）。使用 `omp --profile <name>` 时，应在同一个 profile 中执行 setup、login、status 和 logout。凭据 ID 根据当前 agent 目录和 Figma 端点生成，因此各 profile 不会自动共享登录状态。插件不写入项目级 MCP 配置。
-
-访问令牌、刷新令牌及客户端注册信息通过 **OMP 原生 AuthStorage** 保存。`mcp.json` 中仅保存服务 URL、传输类型和 OAuth `credentialId` 引用，不保存令牌。后续令牌刷新由 OMP 处理。
-
-Figma 的[官方限额与访问说明](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/)目前规定：Starter 用户对**从 Figma 读取数据的工具，每月最多调用 20 次**，部分工具不计入该限额。额度取决于套餐和席位，可能变更，且不替代文件访问权限。本插件不会增加或绕过额度。
-
-## 常见问题
-
-- **找不到斜杠命令：**在终端用 `omp plugin list` 检查插件，再重启 OMP 或运行 `/reload-plugins`。`/figma-remote-auth ...` 应在 TUI 中输入，不存在 `omp figma-remote-auth` CLI 命令。`/mcp ...` 同样属于 TUI 命令。
-- **已有配置冲突：**setup 不会覆盖有冲突的 `mcpServers.figma`。先备份当前 agent 目录的 `mcp.json`，检查该条目是否存在不同的 URL/type、`Authorization` 请求头、其他 `auth` 来源，或 `command`、`args`、`env`、`oauth` 等旧传输或令牌选项。迁移时，确认后删除或重命名旧条目，再执行 setup/login，保留其他服务。如果 OMP 仍加载了另一个 `figma` 服务，还需检查项目级 MCP 配置。若提示凭据归属冲突，应先解决其他认证来源的占用，插件不会覆盖它。
-- **浏览器回调失败或一直等待：**浏览器和 OMP 应运行在同一台机器上；笔记本浏览器无法直接连接远程 SSH 主机或容器的回环监听。检查本地端口访问，取消当前操作后用 `--port 0` 或一个可用的固定端口重试。登录失败后，setup 配置可能已写入，但凭据尚未保存。
-- **仍然认证失败：**运行 `/figma-remote-auth status`，用 `/figma-remote-auth login` 重新登录，然后执行 `/mcp reload` 与 `/mcp test figma`。OMP 的 `/mcp reauth figma` 走其自身通用 OAuth 流程，**不会调用本插件的 login，也不会使用本插件的客户端名称注册逻辑**。
-- **权限或额度错误：**检查授权的 Figma 账号、文件权限、套餐和席位，并参照上方官方限额；重新登录不会增加额度。
-
-## 退出登录与卸载
-
-安装或链接插件不会自动登录；卸载插件也不会自动清除凭据或删除 `figma` MCP 配置。
-
-如需清理凭据，请在**卸载前**进入每个曾授权的 profile，执行 `/figma-remote-auth logout` 和 `/mcp reload`。Logout 仅删除本地凭据，**不会撤销 Figma 服务器端授权**。如需撤销，请在 Figma 账号设置中移除对应应用的授权。
-
-在终端执行卸载：
+在终端执行，然后重启 OMP：
 
 ```sh
 omp plugin uninstall omp-figma-remote-auth
 ```
 
-重启 OMP 或运行 `/reload-plugins`。如需同时删除服务，仅从对应的 `mcp.json` 中删除 `mcpServers.figma` 条目，再运行 `/mcp reload`。解除链接或卸载后可以删除克隆目录。如果已经卸载，可重新链接插件，再进入原 profile 执行 logout。
+卸载会移除包提供的 Figma 注册，保留凭据供重装使用，独立的用户/项目配置不受影响。
 
-## 开发与致谢
+如需清除凭据，卸载前在 OMP 中执行 `/figma-remote-auth logout` 和 `/mcp reload`。撤销 Figma 服务器端授权需到账号设置中操作。
 
-在仓库目录执行 `npm test`。测试使用 Node 内置测试运行器，无需 `npm install`。`npm publish` 会通过 `prepublishOnly` 运行测试，并发布到 npm 官方仓库。包的 `files` 白名单仅包含运行源码、文档和许可证。
+## 常见问题
 
-本项目采用 [MIT 许可证](LICENSE)，保留 DianP 与 omp-figma-remote-auth contributors 的版权声明。由 [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth) 适配到 OMP。同时感谢 [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper)，原项目曾参考其认证思路。
+| 问题 | 处理方式 |
+| --- | --- |
+| 找不到插件命令 | 在终端用 `omp plugin list` 确认安装，再重启 OMP。 |
+| MCP 未连接 | 确认完整插件包已安装，执行 `/mcp reload` 和 `/mcp test figma`。 |
+| 回调失败或一直等待 | 取消后用 `/figma-remote-auth login --port 0` 重试。浏览器须能访问 OMP 所在机器的 `127.0.0.1`；SSH/容器不会自动配置端口转发。 |
+| 配置或凭据冲突 | 检查提示路径，备份后再调整。插件不会覆盖自定义配置或其他来源的凭据。 |
+| 认证失败 | 用 `/figma-remote-auth login` 重新登录，再 reload/test；`/mcp reauth figma` 不会调用本插件。 |
+| 权限或额度不足 | 检查账号、文件权限及套餐，参见 [Figma 限额](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/)。 |
+
+## 配置与认证说明
+
+- **配置与凭据：**包内 `.mcp.json` 提供 Figma 服务，新安装不写用户 MCP 配置。凭据由 OMP 保存和刷新；使用 profile 时，请在同一 profile 中登录。
+- **授权应用名：**`Codex` 用于兼容 [Figma 客户端策略](https://developers.figma.com/docs/figma-mcp-server/rate-limits-access/#which-mcp-clients-are-supported)。每次登录注册独立客户端，不使用 Codex 的账号或凭据。
+- **授权入口：**本机短链接转发完整 OAuth 请求，长授权 URL 和 token 不输出到终端。
+
+## 许可证与致谢
+
+[MIT](LICENSE)。改编自 [DianP/pi-figma-remote-auth](https://github.com/DianP/pi-figma-remote-auth)，其认证思路参考了 [sdaoudi/mcp-auth-helper](https://github.com/sdaoudi/mcp-auth-helper)。
+
+源码安装与测试请参阅[开发指南](https://github.com/picasuo/omp-figma-remote-auth/blob/main/DEVELOPMENT.md#简体中文)。

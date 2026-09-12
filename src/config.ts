@@ -1,4 +1,4 @@
-import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants, closeSync, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { FIGMA_URL, UserError } from "./args.ts";
@@ -7,20 +7,26 @@ type JsonObject = Record<string, unknown>;
 function record(value: unknown): value is JsonObject {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
-export interface ConfigState { configured: boolean; path: string }
+export interface LegacyConfigState { kind: "absent" | "owned" | "conflict"; path: string }
 
-/** Newly created private directories use 0700; normal ancestor links (macOS /tmp) are allowed. */
-function privateDirectory(path: string): void {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
-  const info = lstatSync(path);
-  if (!info.isDirectory() || info.isSymbolicLink()) {
-    throw new UserError("OMP config directory must be a real directory, not a symlink.");
+/** Do not create anything; normal ancestor links (macOS /tmp) are allowed. */
+function checkDirectory(path: string): void {
+  try {
+    const info = lstatSync(path);
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+      throw new UserError("OMP config directory must be a real directory, not a symlink.");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    if (error instanceof UserError) throw error;
+    throw new UserError("Unable to inspect the OMP config directory safely; it was not changed.");
   }
 }
 function readConfig(path: string): { raw?: string; config: JsonObject } {
   let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) throw new UserError("OMP mcp.json must be a regular file; it was not changed.");
     const raw = readFileSync(fd, "utf8");
     let config: unknown;
     try { config = JSON.parse(raw); }
@@ -36,58 +42,37 @@ function readConfig(path: string): { raw?: string; config: JsonObject } {
   }
 }
 
-/** Validate before mutation, preserving all unrelated JSON fields and servers. */
-export function mergeConfig(config: JsonObject, credentialId: string): JsonObject {
+function classify(config: JsonObject, legacyId: string): LegacyConfigState["kind"] {
+  if (!Object.hasOwn(config, "mcpServers")) return "absent";
   const servers = config.mcpServers;
-  if (servers !== undefined && !record(servers)) {
-    throw new UserError("mcpServers must be an object; mcp.json was not changed.");
+  if (!record(servers)) throw new UserError("mcpServers must be an object; mcp.json was not changed.");
+  if (!Object.hasOwn(servers, "figma")) return "absent";
+  const figma = servers.figma;
+  if (!record(figma) || Object.keys(figma).length !== 3 ||
+      !Object.hasOwn(figma, "type") || figma.type !== "http" ||
+      !Object.hasOwn(figma, "url") || figma.url !== FIGMA_URL ||
+      !Object.hasOwn(figma, "auth") || !record(figma.auth)) return "conflict";
+  const auth = figma.auth;
+  return Object.keys(auth).length === 2 && Object.hasOwn(auth, "type") && auth.type === "oauth" &&
+    Object.hasOwn(auth, "credentialId") && auth.credentialId === legacyId ? "owned" : "conflict";
+}
+function requireRemovable(kind: LegacyConfigState["kind"], path: string): void {
+  if (kind === "conflict") {
+    throw new UserError(`Existing figma configuration in ${path} is not the exact legacy entry owned by this plugin. Resolve that configuration before retrying; it was not changed.`);
   }
-  const entries = servers ?? {};
-  const existing = entries.figma;
-  if (Object.hasOwn(entries, "figma")) {
-    if (!record(existing) || existing.url !== FIGMA_URL || existing.type !== "http") {
-      throw new UserError("Existing figma endpoint/type conflicts with official Figma HTTP MCP; mcp.json was not changed.");
-    }
-    if (existing.headers !== undefined) {
-      if (!record(existing.headers) || Object.keys(existing.headers).some(key => key.toLowerCase() === "authorization")) {
-        throw new UserError("Existing figma headers conflict with OAuth; mcp.json was not changed.");
-      }
-    }
-    if (Object.hasOwn(existing, "auth")) {
-      const auth = existing.auth;
-      if (!record(auth) || auth.type !== "oauth" || auth.credentialId !== credentialId ||
-          Object.keys(auth).some(key => !["type", "credentialId"].includes(key))) {
-        throw new UserError("Existing figma auth belongs to another source or has conflicting options; mcp.json was not changed.");
-      }
-    }
-    // Do not silently combine a URL transport with alternate endpoint/credential settings.
-    if (["endpoint", "command", "args", "env", "apiKey", "token", "bearerToken", "oauth"].some(key => Object.hasOwn(existing, key))) {
-      throw new UserError("Existing figma transport or credential options conflict; mcp.json was not changed.");
-    }
-  }
-  return {
-    ...config,
-    mcpServers: {
-      ...entries,
-      figma: { ...(record(existing) ? existing : {}), type: "http", url: FIGMA_URL, auth: { type: "oauth", credentialId } },
-    },
-  };
+}
+export function inspectLegacyConfig(agentDir: string, legacyId: string): LegacyConfigState {
+  checkDirectory(agentDir);
+  const path = join(agentDir, "mcp.json");
+  return { kind: classify(readConfig(path).config, legacyId), path };
 }
 
-export function configStatus(agentDir: string, credentialId: string): ConfigState {
-  const path = join(agentDir, "mcp.json");
-  const { config } = readConfig(path);
-  mergeConfig(config, credentialId); // Status reports conflicts without revealing values.
-  const servers = record(config.mcpServers) ? config.mcpServers : {};
-  const figma = record(servers.figma) ? servers.figma : {};
-  const auth = record(figma.auth) ? figma.auth : {};
-  return { configured: auth.credentialId === credentialId, path };
-}
-
-/** Synchronous lock/read/merge/rename keeps local operations in one uninterrupted turn. */
-export function setupConfig(agentDir: string, credentialId: string): string {
-  privateDirectory(agentDir);
-  const path = join(agentDir, "mcp.json");
+/** Only delete the exact owned legacy entry, preserving the file and every unrelated field. */
+export function removeLegacyConfig(agentDir: string, legacyId: string): boolean {
+  const state = inspectLegacyConfig(agentDir, legacyId);
+  requireRemovable(state.kind, state.path);
+  if (state.kind === "absent") return false; // No lock, directory, or file writes when absent.
+  const path = state.path;
   const lockPath = join(agentDir, ".figma-remote-auth-config.lock");
   let lock: number;
   try { lock = openSync(lockPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); }
@@ -95,28 +80,36 @@ export function setupConfig(agentDir: string, credentialId: string): string {
   let temporary: string | undefined;
   let file: number | undefined;
   try {
+    checkDirectory(agentDir);
     const { raw, config } = readConfig(path);
-    const merged = mergeConfig(config, credentialId);
-    if (JSON.stringify(config) === JSON.stringify(merged)) return path;
-    temporary = join(agentDir, `.mcp.json.${randomBytes(16).toString("hex")}.tmp`);
-    file = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    writeFileSync(file, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+    const kind = classify(config, legacyId);
+    requireRemovable(kind, path);
+    if (kind === "absent") return false;
+    const servers = { ...(config.mcpServers as JsonObject) };
+    delete servers.figma;
+    const remaining = { ...config, mcpServers: servers };
+    const candidate = join(agentDir, `.mcp.json.${randomBytes(16).toString("hex")}.tmp`);
+    file = openSync(candidate, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    temporary = candidate;
+    writeFileSync(file, `${JSON.stringify(remaining, null, 2)}\n`, "utf8");
     fsyncSync(file);
     closeSync(file);
     file = undefined;
-    if (readConfig(path).raw !== raw) throw new UserError("mcp.json changed during setup; retry the command.");
+    if (readConfig(path).raw !== raw) throw new UserError("mcp.json changed during migration; retry the command.");
     renameSync(temporary, path);
     temporary = undefined;
-    const directory = openSync(agentDir, constants.O_RDONLY);
+    const directory = openSync(agentDir, constants.O_RDONLY | constants.O_NOFOLLOW);
     try { fsyncSync(directory); } finally { closeSync(directory); }
-    return path;
+    return true;
   } catch (error) {
     if (error instanceof UserError) throw error;
-    throw new UserError("Unable to write OMP mcp.json atomically.");
+    throw new UserError("Unable to remove the legacy Figma configuration atomically; retry the command.");
   } finally {
     if (file !== undefined) closeSync(file);
-    if (temporary && existsSync(temporary)) unlinkSync(temporary);
-    closeSync(lock);
-    unlinkSync(lockPath);
+    try {
+      if (temporary !== undefined) unlinkSync(temporary);
+    } finally {
+      try { closeSync(lock); } finally { unlinkSync(lockPath); }
+    }
   }
 }

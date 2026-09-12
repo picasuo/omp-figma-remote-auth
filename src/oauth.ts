@@ -33,7 +33,7 @@ export interface FlowOptions {
   clientName: string;
   port: number;
   signal?: AbortSignal;
-  onAuthorizationUrl: (url: string, callbackUrl: string) => void | Promise<void>;
+  onAuthorizationReady: (entry: { startUrl: string; callbackUrl: string }) => void | Promise<void>;
   /** Test seams only. No CLI option can change the remote URLs. */
   fetch?: FetchLike;
   timeoutMs?: number;
@@ -188,6 +188,7 @@ export async function exchangeCode(
 
 export interface CallbackListener {
   callbackUrl: string;
+  setAuthorizationUrl(url: string): string;
   result: Promise<string>;
   close: () => Promise<void>;
 }
@@ -197,6 +198,10 @@ export async function listenForCallback(port: number, state: string, signal: Abo
   let rejectCode!: (error: unknown) => void;
   let settled = false;
   let closing: Promise<void> | undefined;
+  const entryPath = `/a/${randomBytes(16).toString("base64url")}`;
+  let authorizationUrl: string | undefined;
+  let callbackUrl = "";
+  let expectedHost = "";
   const result = new Promise<string>((resolve, reject) => { resolveCode = resolve; rejectCode = reject; });
   // Discovery/DCR can fail before the caller awaits result. Observe rejection immediately.
   void result.catch(() => {});
@@ -228,8 +233,17 @@ export async function listenForCallback(port: number, state: string, signal: Abo
       res.end(text);
     };
     if (settled) { reply(410, "Authorization already completed."); return; }
+    if (req.headers.host !== expectedHost) { reply(400, "Invalid local Host."); return; }
     if (req.method !== "GET") { reply(405, "GET required."); return; }
     if (!req.url?.startsWith("/") || req.url.startsWith("//")) { reply(400, "Bad callback."); return; }
+    if (req.url === entryPath && authorizationUrl) {
+      res.writeHead(302, {
+        Location: authorizationUrl, "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer", Connection: "close",
+      });
+      res.end();
+      return;
+    }
     let url: URL;
     try { url = new URL(req.url, "http://127.0.0.1"); }
     catch { reply(400, "Bad callback."); return; }
@@ -276,7 +290,33 @@ export async function listenForCallback(port: number, state: string, signal: Abo
     if (!address || typeof address === "string") throw new UserError("OAuth callback listener has no port.");
     signal.addEventListener("abort", onAbort, { once: true });
     if (signal.aborted) { onAbort(); aborted(signal); }
-    return { callbackUrl: `http://127.0.0.1:${address.port}${CALLBACK_PATH}`, result, close };
+    expectedHost = `127.0.0.1:${address.port}`;
+    callbackUrl = `http://${expectedHost}${CALLBACK_PATH}`;
+    return {
+      callbackUrl, result, close,
+      setAuthorizationUrl(value: string): string {
+        if (authorizationUrl !== undefined || settled || closing) {
+          throw new UserError("Figma authorization entry is already bound or closed.");
+        }
+        let target: URL;
+        try { target = new URL(value); }
+        catch { throw new UserError("Invalid Figma authorization target."); }
+        const required: Record<string, string | undefined> = {
+          response_type: "code", client_id: undefined, redirect_uri: callbackUrl,
+          state, code_challenge: undefined, code_challenge_method: "S256",
+        };
+        if (/[\x00-\x20\x7f]/u.test(value) || target.origin + target.pathname !== ENDPOINTS.authorizationUrl ||
+            target.username || target.password || target.hash || value.includes("#") ||
+            Object.entries(required).some(([key, expected]) => {
+              const values = target.searchParams.getAll(key);
+              return values.length !== 1 || !values[0]?.trim() || (expected !== undefined && values[0] !== expected);
+            })) {
+          throw new UserError("Invalid Figma authorization target.");
+        }
+        authorizationUrl = value;
+        return `http://${expectedHost}${entryPath}`;
+      },
+    };
   } catch (error) {
     await close();
     throw error;
@@ -308,7 +348,8 @@ export async function runOAuthFlow(options: FlowOptions): Promise<OAuthGrant> {
       code_challenge: challenge, code_challenge_method: "S256", state,
     }).toString();
     aborted(controller.signal);
-    await abortable(Promise.resolve(options.onAuthorizationUrl(url.href, listener.callbackUrl)), controller.signal);
+    const startUrl = listener.setAuthorizationUrl(url.href);
+    await abortable(Promise.resolve(options.onAuthorizationReady({ startUrl, callbackUrl: listener.callbackUrl })), controller.signal);
     const code = await listener.result;
     aborted(controller.signal);
     const grant = await exchangeCode(fetcher, client, listener.callbackUrl, code, verifier, controller.signal, options.now);
