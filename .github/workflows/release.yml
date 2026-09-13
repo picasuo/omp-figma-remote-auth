@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful tag-validation workflow run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.ci_run_id }}
+  cancel-in-progress: false
+
+env:
+  PACKAGE_NAME: omp-figma-remote-auth
+
+jobs:
+  publish:
+    name: Publish validated artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate the selected validation run
+        id: validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID")"
+          workflow_name="$(jq -r '.name' <<<"$run_json")"
+          workflow_path="$(jq -r '.path' <<<"$run_json")"
+          event="$(jq -r '.event' <<<"$run_json")"
+          tag="$(jq -r '.head_branch' <<<"$run_json")"
+          sha="$(jq -r '.head_sha' <<<"$run_json")"
+          conclusion="$(jq -r '.conclusion' <<<"$run_json")"
+
+          test "$workflow_path" = ".github/workflows/tag-validation.yml" || {
+            echo "Run $RUN_ID did not use tag-validation.yml" >&2
+            exit 1
+          }
+
+          test "$workflow_name" = "Tag validation" || {
+            echo "Run $RUN_ID is not the Tag validation workflow" >&2
+            exit 1
+          }
+          test "$event" = "push" || {
+            echo "Run $RUN_ID was not triggered by a tag push" >&2
+            exit 1
+          }
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Run ref is not a release tag: $tag" >&2
+            exit 1
+          }
+          test "$conclusion" = "success" || {
+            echo "Run $RUN_ID did not succeed: $conclusion" >&2
+            exit 1
+          }
+          tag_ref="$(gh api "repos/$REPOSITORY/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha')"
+          tag_type="${tag_ref%% *}"
+          tag_object="${tag_ref#* }"
+          if [ "$tag_type" = tag ]; then
+            tag_sha="$(gh api "repos/$REPOSITORY/git/tags/$tag_object" --jq '.object.sha')"
+          else
+            tag_sha="$tag_object"
+          fi
+          test "$tag_sha" = "$sha" || {
+            echo "Tag $tag points to $tag_sha, but validation run points to $sha" >&2
+            exit 1
+          }
+
+
+          artifact_count="$(gh api "repos/$REPOSITORY/actions/runs/$RUN_ID/artifacts" --jq '[.artifacts[] | select(.name == "release-candidate" and .expired == false)] | length')"
+          test "$artifact_count" = 1 || {
+            echo "Expected exactly one unexpired release-candidate artifact; found $artifact_count" >&2
+            exit 1
+          }
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Download the selected validation artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: artifact
+          run-id: ${{ inputs.ci_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify artifact identity and package metadata
+        id: package
+        env:
+          EXPECTED_TAG: ${{ steps.validation.outputs.tag }}
+          EXPECTED_SHA: ${{ steps.validation.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test -f artifact/release-manifest.json
+          TARBALLS=(artifact/*.tgz)
+          test "${#TARBALLS[@]}" = 1 || {
+            echo "Expected exactly one package tarball" >&2
+            exit 1
+          }
+          TARBALL="${TARBALLS[0]}"
+
+          node --input-type=module - "$EXPECTED_TAG" "$EXPECTED_SHA" "$TARBALL" <<'NODE'
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          const [expectedTag, expectedSha, tarball] = process.argv.slice(2);
+          const manifest = JSON.parse(fs.readFileSync('artifact/release-manifest.json', 'utf8'));
+          if (manifest.tag !== expectedTag) throw new Error(`Manifest tag mismatch: ${manifest.tag}`);
+          if (manifest.commit !== expectedSha) throw new Error(`Manifest commit mismatch: ${manifest.commit}`);
+          if (manifest.artifact !== tarball.split('/').pop()) throw new Error('Manifest artifact filename mismatch');
+          const digest = crypto.createHash('sha256').update(fs.readFileSync(tarball)).digest('hex');
+          if (manifest.sha256 !== digest) throw new Error('Manifest SHA-256 mismatch');
+          const packageJson = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], { encoding: 'utf8' }));
+          if (packageJson.name !== 'omp-figma-remote-auth') throw new Error(`Unexpected package name: ${packageJson.name}`);
+          if (packageJson.version !== manifest.version) throw new Error('Tarball version does not match manifest');
+          if (expectedTag !== `v${manifest.version}`) throw new Error('Tag does not match manifest version');
+          fs.writeFileSync(process.env.GITHUB_OUTPUT, `version=${manifest.version}\ntarball=${tarball}\nsha256=${manifest.sha256}\n`, { flag: 'a' });
+          NODE
+      - name: Configure npm authentication
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Publish the exact validated tarball
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ steps.package.outputs.version }}
+          TARBALL: ${{ steps.package.outputs.tarball }}
+          EXPECTED_SHA256: ${{ steps.package.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          existing_url="$(npm view "$PACKAGE_NAME@$VERSION" dist.tarball 2>/dev/null || true)"
+          if [ -n "$existing_url" ]; then
+            curl --fail --silent --show-error --location "$existing_url" --output existing.tgz
+            actual_sha256="$(sha256sum existing.tgz | cut -d ' ' -f 1)"
+            test "$actual_sha256" = "$EXPECTED_SHA256" || {
+              echo "npm already contains $PACKAGE_NAME@$VERSION with different contents" >&2
+              exit 1
+            }
+            echo "npm $PACKAGE_NAME@$VERSION already contains this artifact; treating this as a retry"
+          else
+            npm publish "$TARBALL"
+          fi
+      - name: Create or repair GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.validation.outputs.tag }}
+          TARBALL: ${{ steps.package.outputs.tarball }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$TARBALL" --repo "$REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$TARBALL" \
+              --repo "$REPOSITORY" \
+              --title "$TAG" \
+              --generate-notes
+          fi

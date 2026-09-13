@@ -1,0 +1,79 @@
+name: Tag validation
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate and package release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate tag and package versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          LOCK_VERSION="$(node -p "require('./package-lock.json').version || ''")"
+          EXPECTED_TAG="v${VERSION}"
+          test "$TAG" = "$EXPECTED_TAG" || {
+            echo "Tag $TAG does not match package.json version $VERSION" >&2
+            exit 1
+          }
+          if [ -n "$LOCK_VERSION" ] && [ "$LOCK_VERSION" != "$VERSION" ]; then
+            echo "package-lock.json version $LOCK_VERSION does not match package.json version $VERSION" >&2
+            exit 1
+          fi
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run release validation tests
+        run: npm test
+      - name: Create package tarball
+        run: npm pack --json > pack.json
+      - name: Create release manifest
+        env:
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const crypto = require('node:crypto');
+          const pack = JSON.parse(fs.readFileSync('pack.json', 'utf8'))[0];
+          const manifest = {
+            tag: process.env.TAG,
+            version: pack.version,
+            commit: process.env.COMMIT,
+            artifact: pack.filename,
+            sha256: crypto.createHash('sha256')
+              .update(fs.readFileSync(pack.filename))
+              .digest('hex'),
+          };
+          if (manifest.tag !== `v${manifest.version}`) {
+            throw new Error('Packed version does not match the release tag');
+          }
+          fs.writeFileSync('release-manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+          cat release-manifest.json
+      - name: Upload the single validated release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: |
+            release-manifest.json
+            '*.tgz'
+          if-no-files-found: error
+          retention-days: 30
