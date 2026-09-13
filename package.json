@@ -1,6 +1,6 @@
 {
   "name": "omp-figma-remote-auth",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "OAuth helper for Figma remote MCP using OMP native transport",
   "type": "module",
   "license": "MIT",
