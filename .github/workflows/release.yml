@@ -145,7 +145,7 @@ jobs:
             }
             echo "npm $PACKAGE_NAME@$VERSION already contains this artifact; treating this as a retry"
           else
-            npm publish "$TARBALL"
+            npm publish "./$TARBALL"
           fi
       - name: Create or repair GitHub Release
         env:
