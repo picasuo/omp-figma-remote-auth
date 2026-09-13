@@ -47,6 +47,24 @@ omp
 
 插件还内置按需加载的 `figma-mcp` skill。提供 Figma 文件或节点链接后，它会引导 OMP 解析节点参数并发现 Figma MCP 工具，包括挂载在 `xd://` 下的工具。
 
+### Figma skill 路由限制
+
+包内的 `figma-mcp` 是 OMP skill，不是 Figma 官方 workflow skill 的复制品。它的作用是识别 Figma 任务、解析文件/节点引用、选择合适的 MCP 工具，并引导模型发现挂载在 `xd://` 下的工具。它不能改写 Figma MCP 服务端的工具描述，也不能拦截模型已经发出的 `read` 请求。
+
+Figma 的 `get_design_context` 指引目前要求客户端读取：
+
+```text
+skill://figma/figma-design-to-code/SKILL.md
+```
+
+但在 OMP 中，`skill://` 是本地 skill 命名空间。模型若严格执行这条指引，OMP 可能先返回 `Unknown skill: figma`，之后才有机会根据插件 skill 修正。在已验证的 OMP 18.1.18 环境中，Figma MCP 资源可以通过 OMP 专用 wrapper 读取：
+
+```text
+read mcp://skill://figma/figma-design-to-code/SKILL.md
+```
+
+该 workaround 要求 Figma MCP 已连接并广告对应资源；`mcp://skill://...` 是 OMP 专用路径，不是通用 MCP URI 语法。由于 Figma 工具描述使用强制性措辞，模型仍可能先尝试裸 `skill://` 路径。不依赖该 workflow 资源的 metadata 查询可能仍能完成，但如果前置资源未成功读取，`get_design_context` 设计转代码请求可能失败或结果不完整。
+
 ## 常用命令
 
 以下均在 **OMP TUI** 中执行，不是终端命令。

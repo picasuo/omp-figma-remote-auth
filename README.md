@@ -47,6 +47,24 @@ The server name is `figma`. Once connected, give OMP a Figma file or node URL yo
 
 The package also includes the on-demand `figma-mcp` skill. When you provide a Figma file or node link, it guides OMP through parsing the node reference and discovering the Figma MCP tools, including tools mounted under `xd://`.
 
+### Figma skill routing limitation
+
+The bundled `figma-mcp` skill is an OMP skill, not a copy of Figma's official workflow skill. Its purpose is to recognize Figma tasks, parse file/node references, select the right MCP tool, and guide tool discovery under `xd://`. It cannot rewrite the Figma MCP server's tool descriptions or intercept a `read` request already emitted by the model.
+
+Figma's `get_design_context` guidance currently asks clients to read:
+
+```text
+skill://figma/figma-design-to-code/SKILL.md
+```
+
+In OMP, `skill://` is the local skill namespace. If the model follows that instruction literally, OMP can return `Unknown skill: figma` before the model reaches the plugin guidance. In the verified OMP 18.1.18 environment, the Figma MCP resource can instead be read with OMP's MCP-specific wrapper:
+
+```text
+read mcp://skill://figma/figma-design-to-code/SKILL.md
+```
+
+This workaround requires the Figma MCP server to be connected and to advertise that resource; `mcp://skill://...` is OMP-specific, not a general MCP URI syntax. A model may still first try the bare `skill://` path because the Figma tool description uses mandatory wording. Metadata queries that do not require this workflow resource may still work, but a `get_design_context` design-to-code request can fail or return incomplete results if the prerequisite resource is not loaded.
+
 ## Commands
 
 These commands run **inside OMP's TUI**, not in your terminal.
