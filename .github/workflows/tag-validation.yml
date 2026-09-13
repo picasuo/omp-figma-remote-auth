@@ -74,6 +74,6 @@ jobs:
           name: release-candidate
           path: |
             release-manifest.json
-            '*.tgz'
+            *.tgz
           if-no-files-found: error
           retention-days: 30
