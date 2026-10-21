@@ -4,7 +4,7 @@
 
 ## English
 
-For source changes and local testing. Requires OMP 18.1.17+ (verified on 18.1.17) and Git; tests require Node.js 22.6.0+ and npm.
+For source changes and local testing. Requires OMP 18.1.17+ (verified on 18.1.17 and 18.12.5) and Git; tests require Node.js 22.6.0+ and npm.
 
 ### Link a source checkout
 
@@ -43,7 +43,7 @@ Keep the full `omp plugin install ...@latest` command for regular installs: `omp
 
 ## 简体中文
 
-用于源码修改和本地测试。需要 OMP 18.1.17+（已验证 18.1.17）和 Git；测试需要 Node.js 22.6.0+ 和 npm。
+用于源码修改和本地测试。需要 OMP 18.1.17+（已验证 18.1.17 和 18.12.5）和 Git；测试需要 Node.js 22.6.0+ 和 npm。
 
 ### 从源码链接
 

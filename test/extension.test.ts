@@ -19,7 +19,7 @@ const grant: OAuthGrant = {
 const entry = { startUrl: "http://127.0.0.1:1234/a/abcdefghijklmnopqrstuv", callbackUrl: "http://127.0.0.1:1234/callback" };
 const widgetKey = "figma-remote-auth";
 
-function fixture(runOAuth: NonNullable<Dependencies["runOAuth"]>) {
+function fixture(runOAuth: NonNullable<Dependencies["runOAuth"]>, layout: "direct" | "pool" = "direct") {
   const dir = mkdtempSync(join(tmpdir(), "figma-extension-"));
   const credentials = new Map<string, Credential>();
   const notifications: Array<{ text: string; level: string }> = [];
@@ -33,13 +33,14 @@ function fixture(runOAuth: NonNullable<Dependencies["runOAuth"]>) {
   let commandName = "";
   let command!: Parameters<ExtensionAPI["registerCommand"]>[1];
   let shutdown!: () => void | Promise<void>;
+  const storage = {
+    get: (id: string) => credentials.get(id),
+    set: async (id: string, value: Credential) => { credentials.set(id, value); },
+    remove: async (id: string) => { credentials.delete(id); },
+  };
   const ctx: CommandContext = {
     hasUI: true, mode: "tui",
-    modelRegistry: { authStorage: {
-      get: id => credentials.get(id),
-      set: async (id, value) => { credentials.set(id, value); },
-      remove: async id => { credentials.delete(id); },
-    } },
+    modelRegistry: { authStorage: layout === "pool" ? { credentials: storage } : storage },
     ui: {
       notify: (text, level) => { notifications.push({ text, level }); },
       setStatus: (key, value) => { events.push(value ? "status:set" : "status:clear"); statuses.set(key, value); },
@@ -125,6 +126,35 @@ test("registered commands authorize, report status and remove native credentials
     await host.shutdown();
     host.cleanup();
   }
+});
+
+test("login saves through the credentials-pool layout current OMP exposes", async () => {
+  const host = fixture(async options => {
+    await options.onAuthorizationReady(entry);
+    return grant;
+  }, "pool");
+  try {
+    await host.run("login --no-browser");
+    const saved = host.credentials.get(nativeCredentialIdFor(resolveActiveProfile()));
+    assert.equal(saved?.access, grant.access);
+    assert.equal(saved?.figmaRemoteAuthOwner, OWNER);
+    assert.equal(host.notifications.at(-1)!.text, "Figma authorization saved. Run /mcp reload.");
+    await host.run("status");
+    assert.match(host.notifications.at(-1)!.text, /Credential: present/);
+    await host.run("logout");
+    assert.equal(host.credentials.size, 0);
+  } finally { await host.shutdown(); host.cleanup(); }
+});
+
+test("an unsupported credential host reports an actionable notice instead of masking it", async () => {
+  const host = fixture(async () => grant);
+  host.ctx.modelRegistry = { authStorage: { get: (id: string) => host.credentials.get(id) } };
+  try {
+    await host.run("login --no-browser");
+    assert.equal(host.credentials.size, 0);
+    assert.match(host.notifications.at(-1)!.text, /credential storage layout/);
+    assert.doesNotMatch(host.notifications.at(-1)!.text, /No credentials were included/);
+  } finally { await host.shutdown(); host.cleanup(); }
 });
 
 test("login migrates legacy data before authorization and status is read-only", async () => {
