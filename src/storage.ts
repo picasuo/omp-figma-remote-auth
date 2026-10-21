@@ -9,11 +9,30 @@ export interface Credential extends OAuthGrant {
   figmaRemoteAuthOwner: string;
   figmaRemoteAuthCredentialId: string;
 }
-/** The public AuthStorage contract exposed through ctx.modelRegistry.authStorage. */
+/** The credential operations this plugin needs, whichever layout the host exposes them in. */
 export interface AuthStorage {
   get(provider: string): unknown;
   set(provider: string, credential: Credential): Promise<void>;
   remove(provider: string): Promise<void>;
+}
+/**
+ * ctx.modelRegistry.authStorage itself. Older OMP releases expose the operations directly;
+ * current releases keep the same pool under `credentials`, and nothing else is supported.
+ */
+export interface AuthStorageHost {
+  get?(provider: string): unknown;
+  set?(provider: string, credential: Credential): Promise<void>;
+  remove?(provider: string): Promise<void>;
+  credentials?: AuthStorage;
+}
+function isAuthStorage(value: AuthStorage | undefined): value is AuthStorage {
+  return !!value && typeof value.get === "function" && typeof value.set === "function" &&
+    typeof value.remove === "function";
+}
+export function resolveAuthStorage(host: AuthStorageHost): AuthStorage {
+  if (isAuthStorage(host.credentials)) return host.credentials;
+  if (isAuthStorage(host as AuthStorage)) return host as AuthStorage;
+  throw new UserError("Unsupported OMP credential storage layout. Update OMP or this plugin, then retry; nothing was changed.");
 }
 export function legacyCredentialIdFor(agentDir: string): string {
   return `mcp_oauth_omp_figma_${createHash("sha256").update(`${agentDir}\n${FIGMA_URL}`).digest("hex").slice(0, 24)}`;

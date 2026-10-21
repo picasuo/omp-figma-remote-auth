@@ -5,11 +5,11 @@ import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSyn
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FIGMA_URL, formatError, parseArgs } from "../src/args.ts";
+import { FIGMA_URL, UserError, formatError, parseArgs } from "../src/args.ts";
 import { inspectLegacyConfig, removeLegacyConfig } from "../src/config.ts";
 import { migrateLegacyData } from "../src/migration.ts";
 import { ENDPOINTS } from "../src/oauth.ts";
-import { OWNER, legacyCredentialIdFor, nativeCredentialIdFor, resolveActiveProfile, credentialStatus, logout, saveCredential } from "../src/storage.ts";
+import { OWNER, legacyCredentialIdFor, nativeCredentialIdFor, resolveActiveProfile, resolveAuthStorage, credentialStatus, logout, saveCredential } from "../src/storage.ts";
 import type { AuthStorage, Credential } from "../src/storage.ts";
 
 const grant = {
@@ -89,6 +89,18 @@ test("profiles follow strict environment precedence, trim, default and native UR
   assert.notEqual(nativeCredentialIdFor(undefined), nativeCredentialIdFor("work"));
   assert.equal(legacyCredentialIdFor("/profile/a"), `mcp_oauth_omp_figma_${createHash("sha256").update(`/profile/a\n${FIGMA_URL}`).digest("hex").slice(0, 24)}`);
   assert.notEqual(legacyCredentialIdFor("/profile/a"), legacyCredentialIdFor("/profile/b"));
+});
+
+test("credential storage resolves direct and credentials-pool hosts and rejects partial ones", () => {
+  const direct = memoryStorage();
+  assert.equal(resolveAuthStorage(direct), direct);
+  const pool = memoryStorage();
+  assert.equal(resolveAuthStorage({ ...memoryStorage(), credentials: pool }), pool);
+  assert.equal(resolveAuthStorage({ credentials: pool }), pool);
+  for (const host of [{}, { get: () => undefined }, { credentials: { get: () => undefined } as never }]) {
+    assert.throws(() => resolveAuthStorage(host), (error: unknown) =>
+      error instanceof UserError && /credential storage layout/u.test(error.message));
+  }
 });
 
 test("absent legacy config causes zero writes, including no directory or lock creation", async t => {

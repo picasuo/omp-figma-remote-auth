@@ -6,7 +6,7 @@ Connect [Oh My Pi (OMP)](https://github.com/can1357/oh-my-pi) to the official Fi
 
 ## Installation and authorization
 
-Requires OMP 18.1.17+ (verified on 18.1.17), a Figma account with file access, and a browser on the same machine as OMP. No Figma Desktop or manual MCP configuration is needed.
+Requires OMP 18.1.17+ (verified on 18.1.17 and 18.12.5, covering both credential-storage layouts), a Figma account with file access, and a browser on the same machine as OMP. No Figma Desktop or manual MCP configuration is needed.
 
 ### 1. Install in your terminal
 

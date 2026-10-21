@@ -5,15 +5,15 @@ import { inspectLegacyConfig } from "./src/config.ts";
 import { migrateLegacyData } from "./src/migration.ts";
 import { runOAuthFlow } from "./src/oauth.ts";
 import type { FlowOptions, OAuthGrant } from "./src/oauth.ts";
-import { legacyCredentialIdFor, nativeCredentialIdFor, resolveActiveProfile, credentialStatus, logout, saveCredential } from "./src/storage.ts";
-import type { AuthStorage } from "./src/storage.ts";
+import { legacyCredentialIdFor, nativeCredentialIdFor, resolveActiveProfile, resolveAuthStorage, credentialStatus, logout, saveCredential } from "./src/storage.ts";
+import type { AuthStorageHost } from "./src/storage.ts";
 
 /** Minimal structural interface; OMP supplies all runtime services, no SDK dependency. */
 export interface CommandContext {
   signal?: AbortSignal;
   mode?: string;
   hasUI?: boolean;
-  modelRegistry: { authStorage: AuthStorage };
+  modelRegistry: { authStorage: AuthStorageHost };
   ui: {
     notify(message: string, level: "info" | "error"): void;
     setStatus?(key: string, message: string | undefined): void;
@@ -80,7 +80,7 @@ export function registerExtension(pi: ExtensionAPI, dependencies: Dependencies =
         const profile = resolveActiveProfile();
         const credentialId = nativeCredentialIdFor(profile);
         const legacyId = legacyCredentialIdFor(agentDir);
-        const storage = ctx.modelRegistry.authStorage;
+        const storage = resolveAuthStorage(ctx.modelRegistry.authStorage);
         if (command.kind === "status") {
           const config = inspectLegacyConfig(agentDir, legacyId);
           ctx.ui.notify([
